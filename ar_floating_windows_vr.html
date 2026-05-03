@@ -1,0 +1,2268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#010a12">
+<title>AR SPACE — Realidad Aumentada</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --neon-cyan: #00f5ff;
+    --neon-purple: #bf00ff;
+    --neon-green: #00ff88;
+    --neon-orange: #ff6600;
+    --dark-bg: #010a12;
+    --panel-bg: rgba(0, 20, 35, 0.85);
+    --glass-border: rgba(0, 245, 255, 0.25);
+    --text-primary: #e0f8ff;
+    --text-muted: rgba(0, 245, 255, 0.5);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* Android: disable tap highlight and text selection everywhere */
+  * {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  body {
+    font-family: 'Rajdhani', sans-serif;
+    background: var(--dark-bg);
+    color: var(--text-primary);
+    overflow: hidden;
+    height: 100vh;
+    height: 100dvh; /* Android Chrome dynamic viewport */
+    width: 100vw;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none; /* prevent browser scroll interfering with drag */
+  }
+
+  /* CAMERA BACKGROUND */
+  #camera-feed {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    z-index: 0;
+    opacity: 0.85;
+  }
+
+  #camera-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,245,255,0.03) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,245,255,0.03) 40px);
+    pointer-events: none;
+  }
+
+  /* Scan line animation */
+  #scanline {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 3px;
+    background: linear-gradient(transparent, rgba(0,245,255,0.4), transparent);
+    z-index: 2;
+    animation: scanline 4s linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes scanline {
+    0% { top: 0; }
+    100% { top: 100%; }
+  }
+
+  /* CORNER BRACKETS HUD */
+  .hud-corner {
+    position: fixed;
+    width: 60px; height: 60px;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .hud-corner::before, .hud-corner::after {
+    content: '';
+    position: absolute;
+    background: var(--neon-cyan);
+    box-shadow: 0 0 8px var(--neon-cyan);
+  }
+  .hud-corner::before { width: 100%; height: 2px; }
+  .hud-corner::after { width: 2px; height: 100%; }
+  .hud-tl { top: 16px; left: 16px; }
+  .hud-tl::before { top: 0; left: 0; }
+  .hud-tl::after { top: 0; left: 0; }
+  .hud-tr { top: 16px; right: 16px; transform: scaleX(-1); }
+  .hud-tr::before { top: 0; left: 0; }
+  .hud-tr::after { top: 0; left: 0; }
+  .hud-bl { bottom: 16px; left: 16px; transform: scaleY(-1); }
+  .hud-bl::before { top: 0; left: 0; }
+  .hud-bl::after { top: 0; left: 0; }
+  .hud-br { bottom: 16px; right: 16px; transform: scale(-1); }
+  .hud-br::before { top: 0; left: 0; }
+  .hud-br::after { top: 0; left: 0; }
+
+  /* HUD STATUS BAR */
+  #hud-top {
+    position: fixed;
+    top: 20px;
+    top: max(20px, env(safe-area-inset-top) + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid var(--glass-border);
+    padding: 8px 24px;
+    border-radius: 40px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  #hud-top .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 14px;
+    letter-spacing: 4px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 10px var(--neon-cyan);
+  }
+
+  .hud-stat {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hud-stat .val {
+    color: var(--neon-green);
+    font-weight: 600;
+    font-size: 12px;
+  }
+
+  .pulse-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--neon-green);
+    box-shadow: 0 0 6px var(--neon-green);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  /* CAMERA PERMISSION */
+  #camera-prompt {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    text-align: center;
+    padding: 40px;
+    background: rgba(0,10,20,0.92);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    backdrop-filter: blur(20px);
+    max-width: 360px;
+  }
+
+  #camera-prompt h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 12px var(--neon-cyan);
+    margin-bottom: 12px;
+    letter-spacing: 2px;
+  }
+
+  #camera-prompt p {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+
+  .cam-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+    filter: drop-shadow(0 0 12px var(--neon-cyan));
+  }
+
+  /* TOOLBAR */
+  #toolbar {
+    position: fixed;
+    bottom: 32px;
+    bottom: max(32px, env(safe-area-inset-bottom) + 16px); /* Android notch/nav bar */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+    background: rgba(0,0,0,0.75);
+    border: 1px solid var(--glass-border);
+    padding: 10px 16px;
+    border-radius: 60px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 0 30px rgba(0,245,255,0.08), inset 0 0 30px rgba(0,0,0,0.5);
+    /* Horizontal scroll if too many buttons on small screens */
+    overflow-x: auto;
+    max-width: calc(100vw - 24px);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tool-btn {
+    width: 48px; height: 48px;
+    min-width: 48px; /* Android: never shrink touch targets below 48px */
+    border-radius: 50%;
+    border: 1px solid var(--glass-border);
+    background: rgba(0,245,255,0.05);
+    color: var(--neon-cyan);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    transition: all 0.2s ease;
+    position: relative;
+    flex-shrink: 0;
+    touch-action: manipulation; /* removes 300ms tap delay on Android */
+  }
+
+  .tool-btn:hover {
+    background: rgba(0,245,255,0.15);
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 16px rgba(0,245,255,0.4);
+    transform: scale(1.1);
+  }
+
+  .tool-btn.active {
+    background: rgba(0,245,255,0.2);
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 20px rgba(0,245,255,0.5);
+  }
+
+  .tool-btn .tooltip {
+    position: absolute;
+    bottom: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.9);
+    border: 1px solid var(--glass-border);
+    color: var(--neon-cyan);
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    font-family: 'Rajdhani', sans-serif;
+  }
+
+  .tool-btn:hover .tooltip { opacity: 1; }
+
+  .tool-separator {
+    width: 1px;
+    background: var(--glass-border);
+    margin: 8px 4px;
+  }
+
+  /* FLOATING WINDOWS */
+  .float-window {
+    position: fixed;
+    min-width: 240px;
+    min-height: 180px;
+    background: var(--panel-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    backdrop-filter: blur(16px);
+    box-shadow: 0 0 40px rgba(0,245,255,0.12), 0 20px 60px rgba(0,0,0,0.6);
+    z-index: 5;
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+
+  .float-window.dragging {
+    box-shadow: 0 0 60px rgba(0,245,255,0.35), 0 20px 80px rgba(0,0,0,0.7);
+    cursor: grabbing;
+  }
+
+  .float-window.focused {
+    z-index: 6;
+    border-color: rgba(0,245,255,0.5);
+    box-shadow: 0 0 50px rgba(0,245,255,0.2), 0 20px 60px rgba(0,0,0,0.7);
+  }
+
+  .win-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(0,245,255,0.06);
+    border-bottom: 1px solid var(--glass-border);
+    cursor: grab;
+    gap: 8px;
+  }
+
+  .win-titlebar:active { cursor: grabbing; }
+
+  .win-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 8px rgba(0,245,255,0.5);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .win-controls {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .win-btn {
+    width: 28px; height: 28px;
+    min-width: 28px;
+    border-radius: 50%;
+    border: 1px solid;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    transition: all 0.15s;
+    line-height: 1;
+    padding: 0;
+    touch-action: manipulation;
+  }
+
+  .win-btn.close { border-color: #ff4444; color: #ff4444; }
+  .win-btn.close:hover { background: #ff4444; color: #fff; box-shadow: 0 0 10px #ff4444; }
+  .win-btn.max { border-color: var(--neon-green); color: var(--neon-green); }
+  .win-btn.max:hover { background: var(--neon-green); color: #000; box-shadow: 0 0 10px var(--neon-green); }
+  .win-btn.rot { border-color: var(--neon-purple); color: var(--neon-purple); }
+  .win-btn.rot:hover { background: var(--neon-purple); color: #fff; box-shadow: 0 0 10px var(--neon-purple); }
+
+  .win-content {
+    width: 100%;
+    height: calc(100% - 42px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .win-content img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .win-content video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* RESIZE HANDLE */
+  .win-resize {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 20px; height: 20px;
+    cursor: se-resize;
+    z-index: 10;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 3px;
+  }
+
+  .win-resize svg {
+    width: 12px; height: 12px;
+    opacity: 0.5;
+  }
+
+  .win-resize:hover svg { opacity: 1; }
+
+  /* 3D ROTATE CONTROLS */
+  .win-transform {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    z-index: 8;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+
+  .float-window:hover .win-transform {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .rot-btn {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(191,0,255,0.5);
+    background: rgba(191,0,255,0.1);
+    color: var(--neon-purple);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .rot-btn:hover {
+    background: rgba(191,0,255,0.3);
+    box-shadow: 0 0 10px var(--neon-purple);
+  }
+
+  /* SCALE INDICATOR */
+  .scale-badge {
+    position: absolute;
+    top: 46px;
+    right: 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    font-family: 'Orbitron', sans-serif;
+    pointer-events: none;
+  }
+
+  /* BUTTONS */
+  .btn {
+    padding: 10px 24px;
+    border-radius: 8px;
+    border: 1px solid var(--neon-cyan);
+    background: rgba(0,245,255,0.08);
+    color: var(--neon-cyan);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 14px;
+    letter-spacing: 2px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .btn:hover {
+    background: rgba(0,245,255,0.2);
+    box-shadow: 0 0 20px rgba(0,245,255,0.4);
+  }
+
+  /* SIDE PANEL */
+  #side-panel {
+    position: fixed;
+    right: -320px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 9;
+    width: 300px;
+    background: rgba(0,10,20,0.92);
+    border: 1px solid var(--glass-border);
+    border-right: none;
+    border-radius: 16px 0 0 16px;
+    padding: 24px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    transition: right 0.3s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  #side-panel.open { right: 0; }
+
+  #panel-toggle {
+    position: fixed;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    width: 36px; height: 80px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid var(--glass-border);
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--neon-cyan);
+    font-size: 16px;
+    transition: all 0.2s;
+    backdrop-filter: blur(10px);
+  }
+
+  #panel-toggle:hover {
+    background: rgba(0,245,255,0.1);
+    box-shadow: -4px 0 20px rgba(0,245,255,0.2);
+  }
+
+  #side-panel h3 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--neon-cyan);
+    margin-bottom: 20px;
+    text-shadow: 0 0 8px rgba(0,245,255,0.4);
+  }
+
+  .panel-section {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .panel-section label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .panel-section input[type=range] {
+    width: 100%;
+    accent-color: var(--neon-cyan);
+    height: 4px;
+    cursor: pointer;
+  }
+
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .range-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    color: var(--neon-green);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* WINDOWS LIST */
+  #win-list { list-style: none; }
+  #win-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+  }
+  #win-list li:hover {
+    background: rgba(0,245,255,0.08);
+    border-color: var(--glass-border);
+  }
+  #win-list li .win-list-name {
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  #win-list li .win-list-del {
+    color: #ff4444;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+
+  /* FILE DROP ZONE */
+  #drop-zone {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 30;
+    background: rgba(0,245,255,0.04);
+    border: 3px dashed var(--neon-cyan);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    pointer-events: none;
+  }
+
+  #drop-zone.active { display: flex; }
+
+  #drop-zone p {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 20px;
+    letter-spacing: 4px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 20px var(--neon-cyan);
+  }
+
+  #drop-zone span {
+    font-size: 64px;
+    filter: drop-shadow(0 0 20px var(--neon-cyan));
+  }
+
+  /* HIDDEN FILE INPUT */
+  #file-input { display: none; }
+
+  /* CLOCK */
+  #hud-clock {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    color: var(--neon-cyan);
+    letter-spacing: 3px;
+    text-shadow: 0 0 8px rgba(0,245,255,0.4);
+  }
+
+  /* ═══════════════════════════════════
+     OCULUS VR MODE
+  ═══════════════════════════════════ */
+  #vr-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #000;
+  }
+
+  body.vr-active #vr-overlay { display: block; }
+  body.vr-active #toolbar,
+  body.vr-active #hud-top,
+  body.vr-active #side-panel,
+  body.vr-active #panel-toggle,
+  body.vr-active .hud-corner,
+  body.vr-active #scanline { display: none !important; }
+
+  /* The two eye canvases */
+  #vr-left, #vr-right {
+    position: absolute;
+    top: 0;
+    width: 50%;
+    height: 100%;
+    overflow: hidden;
+  }
+  #vr-left  { left: 0; border-right: 2px solid #111; }
+  #vr-right { right: 0; }
+
+  /* Inner scene clone for each eye */
+  .vr-scene {
+    position: absolute;
+    top: 0; left: 0;
+    width: 200%;   /* each eye scene is the full original width */
+    height: 100%;
+    transform-origin: top left;
+  }
+  #vr-left  .vr-scene { left: 0; }
+  #vr-right .vr-scene { left: -100%; } /* offset so right eye shows same scene */
+
+  /* VR lens-distortion barrel rings */
+  .vr-lens {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    background:
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  /* Chromatic aberration fringe */
+  .vr-left-lens  { box-shadow: inset 0 0 60px 10px rgba(0,0,80,0.35); }
+  .vr-right-lens { box-shadow: inset 0 0 60px 10px rgba(80,0,0,0.35); }
+
+  /* Divider line */
+  #vr-divider {
+    position: absolute;
+    top: 0; left: 50%;
+    width: 2px; height: 100%;
+    background: #111;
+    z-index: 10;
+  }
+
+  /* VR HUD (shown inside VR mode at top of each eye) */
+  .vr-hud {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 8px var(--neon-cyan);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* Exit VR button */
+  #vr-exit-btn {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    padding: 12px 32px;
+    background: rgba(0,0,0,0.85);
+    border: 1px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 3px;
+    border-radius: 40px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 0 20px rgba(0,245,255,0.25);
+    transition: all 0.2s;
+    display: none;
+  }
+  body.vr-active #vr-exit-btn { display: block; }
+  #vr-exit-btn:hover {
+    background: rgba(0,245,255,0.15);
+    box-shadow: 0 0 30px rgba(0,245,255,0.5);
+  }
+
+  /* VR launch modal */
+  #vr-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(12px);
+    align-items: center;
+    justify-content: center;
+  }
+  #vr-modal.open { display: flex; }
+
+  #vr-modal-box {
+    background: rgba(0,8,18,0.95);
+    border: 1px solid rgba(0,245,255,0.3);
+    border-radius: 20px;
+    padding: 40px 36px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(0,245,255,0.1);
+  }
+
+  #vr-modal-box .vr-icon {
+    font-size: 64px;
+    display: block;
+    margin-bottom: 16px;
+    filter: drop-shadow(0 0 16px var(--neon-cyan));
+  }
+
+  #vr-modal-box h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 16px;
+    letter-spacing: 4px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 14px var(--neon-cyan);
+    margin-bottom: 10px;
+  }
+
+  #vr-modal-box p {
+    font-size: 13px;
+    color: rgba(0,245,255,0.55);
+    line-height: 1.7;
+    margin-bottom: 8px;
+  }
+
+  .vr-steps {
+    text-align: left;
+    margin: 16px 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .vr-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: rgba(0,245,255,0.7);
+    letter-spacing: 1px;
+  }
+
+  .vr-step-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--neon-cyan);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    color: var(--neon-cyan);
+    flex-shrink: 0;
+  }
+
+  .vr-btn-row {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  }
+
+  .vr-btn-primary {
+    padding: 12px 28px;
+    border-radius: 8px;
+    border: 1px solid var(--neon-cyan);
+    background: rgba(0,245,255,0.1);
+    color: var(--neon-cyan);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .vr-btn-primary:hover {
+    background: rgba(0,245,255,0.22);
+    box-shadow: 0 0 20px rgba(0,245,255,0.4);
+  }
+
+  .vr-btn-secondary {
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(0,245,255,0.25);
+    background: transparent;
+    color: rgba(0,245,255,0.45);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 13px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .vr-btn-secondary:hover { color: var(--neon-cyan); }
+
+  /* gyro indicator in VR */
+  #vr-gyro-indicator {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 201;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px;
+    color: var(--neon-green);
+    letter-spacing: 2px;
+    display: none;
+  }
+  body.vr-active #vr-gyro-indicator { display: block; }
+
+  /* IPD slider in VR modal */
+  .vr-ipd-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 12px;
+  }
+  .vr-ipd-row label {
+    font-size: 10px; letter-spacing: 2px; color: rgba(0,245,255,0.5);
+    white-space: nowrap;
+  }
+  .vr-ipd-row input[type=range] {
+    flex: 1; accent-color: var(--neon-cyan);
+  }
+  .vr-ipd-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    color: var(--neon-green);
+    min-width: 36px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<!-- CAMERA -->
+<video id="camera-feed" autoplay playsinline muted></video>
+<div id="camera-overlay"></div>
+<div id="scanline"></div>
+
+<!-- HUD CORNERS -->
+<div class="hud-corner hud-tl"></div>
+<div class="hud-corner hud-tr"></div>
+<div class="hud-corner hud-bl"></div>
+<div class="hud-corner hud-br"></div>
+
+<!-- HUD TOP BAR -->
+<div id="hud-top">
+  <span class="logo">AR SPACE</span>
+  <div class="hud-stat">
+    <div class="pulse-dot"></div>
+    <span>CAM</span>
+    <span class="val" id="cam-status">OFF</span>
+  </div>
+  <div class="hud-stat">WIN <span class="val" id="win-count">0</span></div>
+  <div id="hud-clock">00:00:00</div>
+</div>
+
+<!-- FILE HIDDEN INPUT -->
+<input type="file" id="file-input" accept="image/*,video/*,.stl" multiple>
+
+<!-- CAMERA PERMISSION PROMPT -->
+<div id="camera-prompt">
+  <span class="cam-icon">📷</span>
+  <h2>ACTIVAR CÁMARA</h2>
+  <p>Activa la cámara para usar como fondo de realidad aumentada. Las ventanas flotarán sobre el video en tiempo real.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+    <button class="btn" onclick="startCamera()">ACTIVAR</button>
+    <button class="btn" style="border-color:rgba(0,245,255,0.3);color:rgba(0,245,255,0.5)" onclick="skipCamera()">SIN CÁMARA</button>
+  </div>
+</div>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <button class="tool-btn" onclick="document.getElementById('file-input').click()" title="Cargar imagen o video">
+    📁
+    <span class="tooltip">CARGAR ARCHIVO</span>
+  </button>
+  <button class="tool-btn" onclick="createTextWindow()" title="Nueva ventana">
+    ➕
+    <span class="tooltip">NUEVA VENTANA</span>
+  </button>
+  <div class="tool-separator"></div>
+  <button class="tool-btn" onclick="arrangeWindows('cascade')">
+    ⧉
+    <span class="tooltip">CASCADA</span>
+  </button>
+  <button class="tool-btn" onclick="arrangeWindows('grid')">
+    ⊞
+    <span class="tooltip">CUADRÍCULA</span>
+  </button>
+  <button class="tool-btn" onclick="arrangeWindows('scatter')">
+    ✦
+    <span class="tooltip">DISPERSAR</span>
+  </button>
+  <div class="tool-separator"></div>
+  <button class="tool-btn" onclick="toggleCamera()" id="cam-btn">
+    📷
+    <span class="tooltip">CÁMARA AR</span>
+  </button>
+  <button class="tool-btn" onclick="togglePanel()">
+    ⚙
+    <span class="tooltip">CONFIGURAR</span>
+  </button>
+  <button class="tool-btn" onclick="closeAllWindows()" style="color:#ff6666;">
+    ✕
+    <span class="tooltip">CERRAR TODO</span>
+  </button>
+  <div class="tool-separator"></div>
+  <button class="tool-btn" onclick="openVRModal()" style="color:#bf00ff;border-color:rgba(191,0,255,0.4);">
+    🥽
+    <span class="tooltip">MODO OCULUS VR</span>
+  </button>
+</div>
+
+<!-- DROP ZONE -->
+<div id="drop-zone">
+  <span>⬇</span>
+  <p>SOLTAR ARCHIVO AQUÍ</p>
+</div>
+
+<!-- SIDE PANEL -->
+<button id="panel-toggle" onclick="togglePanel()">◀</button>
+
+<div id="side-panel">
+  <h3>CONTROL PANEL</h3>
+
+  <div class="panel-section">
+    <label>Opacidad de ventanas</label>
+    <div class="range-row">
+      <input type="range" id="win-opacity" min="20" max="100" value="85" oninput="updateGlobalOpacity(this.value)">
+      <span class="range-val" id="opacity-val">85%</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <label>Escala global</label>
+    <div class="range-row">
+      <input type="range" id="win-scale" min="50" max="200" value="100" oninput="updateGlobalScale(this.value)">
+      <span class="range-val" id="scale-val">100%</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <label>Blur AR (efecto profundidad)</label>
+    <div class="range-row">
+      <input type="range" id="cam-blur" min="0" max="10" value="0" oninput="updateCamBlur(this.value)">
+      <span class="range-val" id="blur-val">0px</span>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <label>Color neon</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div onclick="setNeonColor('#00f5ff')" style="width:28px;height:28px;border-radius:50%;background:#00f5ff;cursor:pointer;border:2px solid white;"></div>
+      <div onclick="setNeonColor('#bf00ff')" style="width:28px;height:28px;border-radius:50%;background:#bf00ff;cursor:pointer;"></div>
+      <div onclick="setNeonColor('#00ff88')" style="width:28px;height:28px;border-radius:50%;background:#00ff88;cursor:pointer;"></div>
+      <div onclick="setNeonColor('#ff6600')" style="width:28px;height:28px;border-radius:50%;background:#ff6600;cursor:pointer;"></div>
+      <div onclick="setNeonColor('#ff0088')" style="width:28px;height:28px;border-radius:50%;background:#ff0088;cursor:pointer;"></div>
+    </div>
+  </div>
+
+  <div class="panel-section" style="border:none;margin-bottom:0;">
+    <label>Ventanas activas</label>
+    <ul id="win-list"></ul>
+  </div>
+</div>
+
+<!-- VR MODAL -->
+<div id="vr-modal">
+  <div id="vr-modal-box">
+    <span class="vr-icon">🥽</span>
+    <h2>OCULUS VR MODE</h2>
+    <p>Vista estereoscópica dividida. Compatible con Oculus Quest, Quest 2/3, y cualquier headset con navegador integrado.</p>
+    <div class="vr-steps">
+      <div class="vr-step"><div class="vr-step-num">1</div> Coloca el dispositivo en modo horizontal</div>
+      <div class="vr-step"><div class="vr-step-num">2</div> Activa pantalla completa (F11 o menú del navegador)</div>
+      <div class="vr-step"><div class="vr-step-num">3</div> Inserta el teléfono en tu headset VR</div>
+      <div class="vr-step"><div class="vr-step-num">4</div> Usa giroscopio para orbitar la escena</div>
+    </div>
+    <div class="vr-ipd-row">
+      <label>IPD (separación)</label>
+      <input type="range" id="vr-ipd" min="55" max="75" value="63" oninput="updateIPD(this.value)">
+      <span class="vr-val vr-ipd-val" id="vr-ipd-val">63mm</span>
+    </div>
+    <div class="vr-ipd-row" style="margin-top:8px;">
+      <label>Zoom lentes</label>
+      <input type="range" id="vr-zoom" min="60" max="130" value="85" oninput="updateVRZoom(this.value)">
+      <span class="vr-val vr-ipd-val" id="vr-zoom-val">85%</span>
+    </div>
+    <br>
+    <div class="vr-btn-row">
+      <button class="vr-btn-primary" onclick="enterVRMode()">⬛ ENTRAR EN VR</button>
+      <button class="vr-btn-secondary" onclick="closeVRModal()">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<!-- VR OVERLAY (rendered scene) -->
+<div id="vr-overlay">
+  <!-- Left eye -->
+  <div id="vr-left">
+    <div class="vr-scene" id="vr-scene-left"></div>
+    <div class="vr-lens vr-left-lens"></div>
+    <div class="vr-hud">👁 L &nbsp;·&nbsp; AR SPACE VR</div>
+  </div>
+  <!-- Right eye -->
+  <div id="vr-right">
+    <div class="vr-scene" id="vr-scene-right"></div>
+    <div class="vr-lens vr-right-lens"></div>
+    <div class="vr-hud">AR SPACE VR &nbsp;·&nbsp; R 👁</div>
+  </div>
+  <div id="vr-divider"></div>
+</div>
+
+<!-- Exit VR Button -->
+<button id="vr-exit-btn" onclick="exitVRMode()">✕ &nbsp; SALIR DE VR</button>
+
+<!-- Gyro status -->
+<div id="vr-gyro-indicator">🔄 GYRO ACTIVO</div>
+
+<script>
+let windows = [];
+let winIdCounter = 0;
+let panelOpen = false;
+let cameraStream = null;
+let globalOpacity = 0.85;
+let globalScale = 1;
+let rotationAngles = {};
+
+// CLOCK
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  document.getElementById('hud-clock').textContent = `${h}:${m}:${s}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// CAMERA
+async function startCamera() {
+  document.getElementById('camera-prompt').style.display = 'none';
+
+  // Android prefers explicit constraints for rear camera
+  const constraints = [
+    { video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: { facingMode: 'user' }, audio: false },
+    { video: true, audio: false }
+  ];
+
+  for (const c of constraints) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(c);
+      const vid = document.getElementById('camera-feed');
+      vid.srcObject = stream;
+      // Android sometimes needs explicit play() after srcObject
+      vid.play().catch(() => {});
+      cameraStream = stream;
+      document.getElementById('cam-status').textContent = 'ON';
+      document.getElementById('cam-status').style.color = '#00ff88';
+      return;
+    } catch(e) {
+      // Try next constraint
+    }
+  }
+  // All failed
+  const msg = document.createElement('div');
+  msg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99;background:rgba(0,0,0,0.9);border:1px solid #ff4444;color:#ff8888;padding:20px 28px;border-radius:12px;text-align:center;font-family:Rajdhani,sans-serif;font-size:14px;max-width:300px;';
+  msg.innerHTML = '⚠ No se pudo acceder a la cámara.<br><br>En Android Chrome: ve a <b>Configuración → Permisos del sitio → Cámara</b> y actívala.<br><br><button onclick="this.parentNode.remove()" style="margin-top:12px;padding:8px 20px;border:1px solid #ff8888;background:transparent;color:#ff8888;border-radius:6px;cursor:pointer;font-family:Rajdhani,sans-serif;">OK</button>';
+  document.body.appendChild(msg);
+}
+
+function skipCamera() {
+  document.getElementById('camera-prompt').style.display = 'none';
+  document.getElementById('camera-feed').style.display = 'none';
+  document.getElementById('camera-overlay').style.background = 'radial-gradient(ellipse at center, #001a2e 0%, #010a12 80%)';
+}
+
+function toggleCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    document.getElementById('camera-feed').srcObject = null;
+    document.getElementById('cam-status').textContent = 'OFF';
+    document.getElementById('cam-status').style.color = '';
+  } else {
+    startCamera();
+  }
+}
+
+// FILE INPUT
+document.getElementById('file-input').addEventListener('change', function(e) {
+  Array.from(e.target.files).forEach(file => {
+    if (file.name.toLowerCase().endsWith('.stl')) createSTLWindow(file);
+    else createMediaWindow(file);
+  });
+  this.value = '';
+});
+
+// DRAG & DROP
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('active');
+});
+
+document.addEventListener('dragleave', (e) => {
+  if (e.relatedTarget === null || e.relatedTarget.nodeName === 'HTML') {
+    document.getElementById('drop-zone').classList.remove('active');
+  }
+});
+
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('active');
+  Array.from(e.dataTransfer.files).forEach(file => {
+    if (file.name.toLowerCase().endsWith('.stl')) createSTLWindow(file);
+    else if (file.type.startsWith('image/') || file.type.startsWith('video/')) createMediaWindow(file);
+  });
+});
+
+// CREATE MEDIA WINDOW
+function createMediaWindow(file) {
+  const id = ++winIdCounter;
+  const url = URL.createObjectURL(file);
+  const isVideo = file.type.startsWith('video/');
+  const name = file.name.length > 20 ? file.name.substring(0,18)+'...' : file.name;
+
+  const x = 80 + Math.random() * (window.innerWidth - 460);
+  const y = 80 + Math.random() * (window.innerHeight - 360);
+  const w = 340 + Math.random() * 160;
+  const h = 260 + Math.random() * 100;
+
+  const win = document.createElement('div');
+  win.className = 'float-window';
+  win.id = `win-${id}`;
+  win.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;opacity:${globalOpacity};`;
+
+  win.innerHTML = `
+    <div class="win-titlebar" id="tb-${id}">
+      <span class="win-title">${name}</span>
+      <div class="win-controls">
+        <button class="win-btn rot" onclick="rotateStep(${id})" title="Rotar 15°">↻</button>
+        <button class="win-btn max" onclick="toggleMaximize(${id})" title="Maximizar">⤢</button>
+        <button class="win-btn close" onclick="closeWindow(${id})" title="Cerrar">✕</button>
+      </div>
+    </div>
+    <div class="win-content">
+      ${isVideo
+        ? `<video src="${url}" controls autoplay loop style="width:100%;height:100%;object-fit:contain;"></video>`
+        : `<img src="${url}" alt="${name}" style="width:100%;height:100%;object-fit:contain;">`
+      }
+    </div>
+    <div class="win-transform">
+      <button class="rot-btn" onclick="rotate3D(${id},-1,0)" title="Rotar Y-">◁</button>
+      <button class="rot-btn" onclick="rotate3D(${id},0,-1)" title="Rotar X-">△</button>
+      <button class="rot-btn" onclick="rotate3D(${id},0,1)" title="Rotar X+">▽</button>
+      <button class="rot-btn" onclick="rotate3D(${id},1,0)" title="Rotar Y+">▷</button>
+    </div>
+    <div class="scale-badge" id="scale-${id}">100%</div>
+    <div class="win-resize" id="resize-${id}">
+      <svg viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <line x1="2" y1="10" x2="10" y2="2" stroke="#00f5ff" stroke-width="1.5"/>
+        <line x1="6" y1="10" x2="10" y2="6" stroke="#00f5ff" stroke-width="1.5"/>
+      </svg>
+    </div>
+  `;
+
+  rotationAngles[id] = { x: 0, y: 0, z: 0 };
+  document.body.appendChild(win);
+  windows.push({ id, el: win, name, maximized: false, origStyle: null });
+
+  makeDraggable(win, id);
+  makeResizable(win, id);
+  focusWindow(win);
+  updateWindowList();
+  updateWinCount();
+}
+
+// TEXT WINDOW
+function createTextWindow() {
+  const id = ++winIdCounter;
+  const x = 100 + Math.random() * (window.innerWidth - 400);
+  const y = 100 + Math.random() * (window.innerHeight - 320);
+
+  const win = document.createElement('div');
+  win.className = 'float-window';
+  win.id = `win-${id}`;
+  win.style.cssText = `left:${x}px;top:${y}px;width:320px;height:220px;opacity:${globalOpacity};`;
+
+  win.innerHTML = `
+    <div class="win-titlebar" id="tb-${id}">
+      <span class="win-title">NOTA // ${id}</span>
+      <div class="win-controls">
+        <button class="win-btn rot" onclick="rotateStep(${id})">↻</button>
+        <button class="win-btn max" onclick="toggleMaximize(${id})">⤢</button>
+        <button class="win-btn close" onclick="closeWindow(${id})">✕</button>
+      </div>
+    </div>
+    <div class="win-content" style="align-items:flex-start;padding:10px;">
+      <textarea placeholder="Escribe aquí..." style="width:100%;height:100%;background:transparent;border:none;outline:none;color:#e0f8ff;font-family:Rajdhani,sans-serif;font-size:14px;resize:none;line-height:1.5;"></textarea>
+    </div>
+    <div class="win-transform">
+      <button class="rot-btn" onclick="rotate3D(${id},-1,0)">◁</button>
+      <button class="rot-btn" onclick="rotate3D(${id},0,-1)">△</button>
+      <button class="rot-btn" onclick="rotate3D(${id},0,1)">▽</button>
+      <button class="rot-btn" onclick="rotate3D(${id},1,0)">▷</button>
+    </div>
+    <div class="scale-badge" id="scale-${id}">100%</div>
+    <div class="win-resize" id="resize-${id}">
+      <svg viewBox="0 0 10 10" fill="none"><line x1="2" y1="10" x2="10" y2="2" stroke="#00f5ff" stroke-width="1.5"/><line x1="6" y1="10" x2="10" y2="6" stroke="#00f5ff" stroke-width="1.5"/></svg>
+    </div>
+  `;
+
+  rotationAngles[id] = { x: 0, y: 0, z: 0 };
+  document.body.appendChild(win);
+  windows.push({ id, el: win, name: `NOTA ${id}`, maximized: false, origStyle: null });
+
+  makeDraggable(win, id);
+  makeResizable(win, id);
+  focusWindow(win);
+  updateWindowList();
+  updateWinCount();
+}
+
+// ── STL VIEWER WINDOW ──────────────────────────────────────────────
+function createSTLWindow(file) {
+  const id = ++winIdCounter;
+  const name = file.name.length > 20 ? file.name.substring(0,18)+'...' : file.name;
+  const x = 80 + Math.random() * (window.innerWidth - 480);
+  const y = 80 + Math.random() * (window.innerHeight - 380);
+
+  const win = document.createElement('div');
+  win.className = 'float-window';
+  win.id = `win-${id}`;
+  win.style.cssText = `left:${x}px;top:${y}px;width:400px;height:320px;opacity:${globalOpacity};`;
+
+  win.innerHTML = `
+    <div class="win-titlebar" id="tb-${id}">
+      <span class="win-title">⬡ ${name}</span>
+      <div class="win-controls">
+        <button class="win-btn rot" onclick="rotateStep(${id})">↻</button>
+        <button class="win-btn max" onclick="toggleMaximize(${id})">⤢</button>
+        <button class="win-btn close" onclick="closeWindow(${id})">✕</button>
+      </div>
+    </div>
+    <div class="win-content" style="padding:0;background:#000a14;" id="stl-content-${id}">
+      <canvas id="stl-canvas-${id}" style="width:100%;height:100%;display:block;"></canvas>
+      <div style="position:absolute;bottom:6px;left:50%;transform:translateX(-50%);font-size:10px;color:rgba(0,245,255,0.4);letter-spacing:1px;pointer-events:none;">
+        DRAG · SCROLL zoom · SHIFT+drag pan
+      </div>
+    </div>
+    <div class="win-transform">
+      <button class="rot-btn" onclick="rotate3D(${id},-1,0)">◁</button>
+      <button class="rot-btn" onclick="rotate3D(${id},0,-1)">△</button>
+      <button class="rot-btn" onclick="rotate3D(${id},0,1)">▽</button>
+      <button class="rot-btn" onclick="rotate3D(${id},1,0)">▷</button>
+    </div>
+    <div class="scale-badge" id="scale-${id}">100%</div>
+    <div class="win-resize" id="resize-${id}">
+      <svg viewBox="0 0 10 10" fill="none"><line x1="2" y1="10" x2="10" y2="2" stroke="#00f5ff" stroke-width="1.5"/><line x1="6" y1="10" x2="10" y2="6" stroke="#00f5ff" stroke-width="1.5"/></svg>
+    </div>
+  `;
+
+  rotationAngles[id] = { x: 0, y: 0, z: 0 };
+  document.body.appendChild(win);
+  windows.push({ id, el: win, name: `⬡ ${file.name}`, maximized: false, origStyle: null });
+  makeDraggable(win, id);
+  makeResizable(win, id);
+  focusWindow(win);
+  updateWindowList();
+  updateWinCount();
+
+  // Load Three.js then init viewer
+  loadThreeJS(() => initSTLViewer(id, file));
+}
+
+let threeLoaded = false;
+let threeQueue = [];
+function loadThreeJS(cb) {
+  if (threeLoaded) { cb(); return; }
+  threeQueue.push(cb);
+  if (threeQueue.length > 1) return; // already loading
+
+  const s1 = document.createElement('script');
+  s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+  s1.onload = () => {
+    threeLoaded = true;
+    threeQueue.forEach(fn => fn());
+    threeQueue = [];
+  };
+  document.head.appendChild(s1);
+}
+
+function initSTLViewer(id, file) {
+  const canvas = document.getElementById(`stl-canvas-${id}`);
+  const content = document.getElementById(`stl-content-${id}`);
+  if (!canvas) return;
+
+  const W = () => content.clientWidth  || 400;
+  const H = () => content.clientHeight || 260;
+
+  // Scene
+  const scene    = new THREE.Scene();
+  scene.background = new THREE.Color(0x000a14);
+
+  const camera = new THREE.PerspectiveCamera(45, W()/H(), 0.1, 10000);
+  camera.position.set(0, 0, 5);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(W(), H());
+  renderer.shadowMap.enabled = true;
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x334455, 1.2));
+  const dir = new THREE.DirectionalLight(0x00f5ff, 1.4);
+  dir.position.set(5, 8, 6);
+  scene.add(dir);
+  const dir2 = new THREE.DirectionalLight(0xbf00ff, 0.6);
+  dir2.position.set(-5, -3, -4);
+  scene.add(dir2);
+
+  // Grid helper
+  const grid = new THREE.GridHelper(10, 20, 0x003344, 0x001a22);
+  scene.add(grid);
+
+  // Parse & load STL
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const geo = parseSTL(e.target.result);
+      geo.computeVertexNormals();
+      geo.center();
+
+      // Fit to view
+      geo.computeBoundingBox();
+      const box  = geo.boundingBox;
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      camera.position.set(0, maxDim * 0.6, maxDim * 2.2);
+      camera.lookAt(0, 0, 0);
+      grid.position.y = -size.y / 2;
+
+      const mat  = new THREE.MeshPhongMaterial({
+        color: 0x00c8e0, specular: 0x00f5ff, shininess: 60,
+        wireframe: false, side: THREE.DoubleSide
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+
+      // Store mesh ref for wireframe toggle
+      canvas._stlMesh = mesh;
+      canvas._stlMat  = mat;
+    } catch(err) {
+      console.error('STL parse error', err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+
+  // Orbit controls (manual, no dep needed)
+  let orbitActive = false, lastOX = 0, lastOY = 0;
+  let theta = 0, phi = Math.PI / 4, radius = 5;
+  let panX = 0, panY = 0;
+
+  canvas.addEventListener('mousedown', e => { orbitActive = true; lastOX = e.clientX; lastOY = e.clientY; e.stopPropagation(); });
+  canvas.addEventListener('touchstart', e => { orbitActive = true; const t=e.touches[0]; lastOX=t.clientX; lastOY=t.clientY; }, {passive:true});
+
+  document.addEventListener('mousemove', e => {
+    if (!orbitActive) return;
+    const dx = e.clientX - lastOX, dy = e.clientY - lastOY;
+    lastOX = e.clientX; lastOY = e.clientY;
+    if (e.shiftKey) { panX -= dx * 0.005 * radius; panY += dy * 0.005 * radius; }
+    else { theta -= dx * 0.008; phi = Math.max(0.05, Math.min(Math.PI - 0.05, phi + dy * 0.008)); }
+    updateOrbit();
+  });
+  document.addEventListener('touchmove', e => {
+    if (!orbitActive || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - lastOX, dy = t.clientY - lastOY;
+    lastOX = t.clientX; lastOY = t.clientY;
+    theta -= dx * 0.008; phi = Math.max(0.05, Math.min(Math.PI-0.05, phi + dy * 0.008));
+    updateOrbit();
+  }, {passive:true});
+  document.addEventListener('mouseup',  () => { orbitActive = false; });
+  document.addEventListener('touchend', () => { orbitActive = false; });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    radius = Math.max(0.5, radius + e.deltaY * 0.01);
+    updateOrbit();
+  }, {passive:false});
+
+  function updateOrbit() {
+    const x = radius * Math.sin(phi) * Math.sin(theta) + panX;
+    const y = radius * Math.cos(phi) + panY;
+    const z = radius * Math.sin(phi) * Math.cos(theta);
+    camera.position.set(x, y, z);
+    camera.lookAt(panX, panY, 0);
+  }
+
+  // Resize observer
+  const ro = new ResizeObserver(() => {
+    renderer.setSize(W(), H());
+    camera.aspect = W() / H();
+    camera.updateProjectionMatrix();
+  });
+  ro.observe(content);
+
+  // Animate
+  let stlFrame;
+  function animate() {
+    stlFrame = requestAnimationFrame(animate);
+    if (canvas._stlMesh) canvas._stlMesh.rotation.y += 0.003;
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Cleanup on window close
+  const winObj = windows.find(w => w.id === id);
+  if (winObj) winObj._stlCleanup = () => {
+    cancelAnimationFrame(stlFrame);
+    ro.disconnect();
+    renderer.dispose();
+  };
+}
+
+// Minimal STL parser (binary & ASCII)
+function parseSTL(buffer) {
+  const geo = new THREE.BufferGeometry();
+  const view = new DataView(buffer);
+
+  // Check binary: header 80 bytes, then uint32 triangle count
+  const numTris = view.getUint32(80, true);
+  const expectedSize = 84 + numTris * 50;
+
+  if (buffer.byteLength === expectedSize && numTris > 0) {
+    // Binary STL
+    const verts = new Float32Array(numTris * 9);
+    const norms = new Float32Array(numTris * 9);
+    let offset = 84;
+    for (let i = 0; i < numTris; i++) {
+      const nx = view.getFloat32(offset, true);
+      const ny = view.getFloat32(offset+4, true);
+      const nz = view.getFloat32(offset+8, true);
+      offset += 12;
+      for (let v = 0; v < 3; v++) {
+        const base = i * 9 + v * 3;
+        verts[base]   = view.getFloat32(offset, true);
+        verts[base+1] = view.getFloat32(offset+4, true);
+        verts[base+2] = view.getFloat32(offset+8, true);
+        norms[base] = nx; norms[base+1] = ny; norms[base+2] = nz;
+        offset += 12;
+      }
+      offset += 2; // attribute
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(norms, 3));
+  } else {
+    // ASCII STL
+    const text = new TextDecoder().decode(buffer);
+    const verts = [];
+    const re = /vertex\s+([\d.eE+\-]+)\s+([\d.eE+\-]+)\s+([\d.eE+\-]+)/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      verts.push(parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]));
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+  }
+  return geo;
+}
+
+// Hook closeWindow to run STL cleanup
+const _origClose = closeWindow;
+closeWindow = function(id) {
+  const w = windows.find(w => w.id === id);
+  if (w && w._stlCleanup) w._stlCleanup();
+  _origClose(id);
+};
+
+// ── AR WORLD ANCHOR SYSTEM ─────────────────────────────────────────
+// Each window stores a "world anchor": its screen position relative to
+// the camera orientation at the moment it was last moved. When the
+// device rotates (gyroscope), all windows shift so they appear fixed.
+
+let worldYaw = 0;    // current device heading (degrees), updated by gyro
+let worldPitch = 0;
+
+// Called by gyro handler — keep a copy of heading for the AR anchor system
+function updateWorldOrientation(yaw, pitch) {
+  const dYaw   = yaw   - worldYaw;
+  const dPitch = pitch - worldPitch;
+  worldYaw   = yaw;
+  worldPitch = pitch;
+
+  // Shift all anchored windows by the delta
+  windows.forEach(w => {
+    const el = document.getElementById(`win-${w.id}`);
+    if (!el || w.maximized) return;
+
+    const curLeft = parseFloat(el.style.left) || 0;
+    const curTop  = parseFloat(el.style.top)  || 0;
+
+    // Convert angular delta to pixels: ~10px per degree feels natural
+    const px = dYaw   * 10;
+    const py = dPitch * 6;
+
+    el.style.left = (curLeft + px) + 'px';
+    el.style.top  = (curTop  + py) + 'px';
+  });
+}
+
+function makeDraggable(win, id) {
+  const titlebar = document.getElementById(`tb-${id}`);
+  let isDragging = false, startX, startY, origX, origY;
+
+  // Android: disable browser pan on titlebar so touchmove can be prevented
+  titlebar.style.touchAction = 'none';
+
+  titlebar.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.win-btn')) return;
+    isDragging = true;
+    startX = e.clientX; startY = e.clientY;
+    const rect = win.getBoundingClientRect();
+    origX = rect.left; origY = rect.top;
+    win.classList.add('dragging');
+    focusWindow(win);
+    e.preventDefault();
+  });
+
+  titlebar.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.win-btn')) return;
+    isDragging = true;
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    const rect = win.getBoundingClientRect();
+    origX = rect.left; origY = rect.top;
+    win.classList.add('dragging');
+    focusWindow(win);
+    e.stopPropagation();
+  }, { passive: true });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    let nx = Math.max(-win.offsetWidth/2, Math.min(window.innerWidth - win.offsetWidth/2, origX + dx));
+    let ny = Math.max(0, Math.min(window.innerHeight - 42, origY + dy));
+    win.style.left = nx + 'px';
+    win.style.top  = ny + 'px';
+  });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    let nx = Math.max(-win.offsetWidth/2, Math.min(window.innerWidth - win.offsetWidth/2, origX + dx));
+    let ny = Math.max(0, Math.min(window.innerHeight - 42, origY + dy));
+    win.style.left = nx + 'px';
+    win.style.top  = ny + 'px';
+    e.preventDefault(); // prevent page scroll while dragging
+  }, { passive: false });
+
+  const stopDrag = () => { isDragging = false; win.classList.remove('dragging'); };
+  document.addEventListener('mouseup', stopDrag);
+  document.addEventListener('touchend', stopDrag);
+
+  win.addEventListener('mousedown', () => focusWindow(win));
+  win.addEventListener('touchstart', () => focusWindow(win), { passive: true });
+}
+
+// RESIZABLE
+function makeResizable(win, id) {
+  const handle = document.getElementById(`resize-${id}`);
+  let isResizing = false, startX, startY, origW, origH;
+  let currentScale = 1;
+
+  const scaleMap = {};
+
+  handle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startX = e.clientX; startY = e.clientY;
+    origW = win.offsetWidth; origH = win.offsetHeight;
+    e.preventDefault(); e.stopPropagation();
+  });
+
+  handle.addEventListener('touchstart', (e) => {
+    isResizing = true;
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    origW = win.offsetWidth; origH = win.offsetHeight;
+    e.stopPropagation();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const nw = Math.max(200, origW + (e.clientX - startX));
+    const nh = Math.max(150, origH + (e.clientY - startY));
+    win.style.width = nw + 'px';
+    win.style.height = nh + 'px';
+    const pct = Math.round(nw / origW * 100);
+    const badge = document.getElementById(`scale-${id}`);
+    if (badge) badge.textContent = pct + '%';
+  });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isResizing) return;
+    const t = e.touches[0];
+    const nw = Math.max(200, origW + (t.clientX - startX));
+    const nh = Math.max(150, origH + (t.clientY - startY));
+    win.style.width = nw + 'px';
+    win.style.height = nh + 'px';
+  });
+
+  const stopResize = () => { isResizing = false; };
+  document.addEventListener('mouseup', stopResize);
+  document.addEventListener('touchend', stopResize);
+
+  // SCROLL TO SCALE
+  win.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    currentScale = parseFloat(win.dataset.scale || '1');
+    const delta = e.deltaY > 0 ? -0.05 : 0.05;
+    currentScale = Math.max(0.3, Math.min(3, currentScale + delta));
+    win.dataset.scale = currentScale;
+    applyTransform(win, id, currentScale);
+    const badge = document.getElementById(`scale-${id}`);
+    if (badge) badge.textContent = Math.round(currentScale * 100) + '%';
+  }, { passive: false });
+}
+
+// ROTATION
+function rotateStep(id) {
+  const win = document.getElementById(`win-${id}`);
+  if (!win) return;
+  const curr = parseFloat(win.dataset.rotZ || '0');
+  win.dataset.rotZ = curr + 15;
+  const scale = parseFloat(win.dataset.scale || '1');
+  applyTransform(win, id, scale);
+}
+
+function rotate3D(id, dy, dx) {
+  const win = document.getElementById(`win-${id}`);
+  if (!win) return;
+  const rx = parseFloat(win.dataset.rotX || '0') + dx * 15;
+  const ry = parseFloat(win.dataset.rotY || '0') + dy * 15;
+  win.dataset.rotX = rx;
+  win.dataset.rotY = ry;
+  const scale = parseFloat(win.dataset.scale || '1');
+  applyTransform(win, id, scale);
+}
+
+function applyTransform(win, id, scale) {
+  const rx = parseFloat(win.dataset.rotX || '0');
+  const ry = parseFloat(win.dataset.rotY || '0');
+  const rz = parseFloat(win.dataset.rotZ || '0');
+  win.style.transform = `perspective(800px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${scale})`;
+  win.style.transformOrigin = 'center center';
+}
+
+// WINDOW ACTIONS
+function closeWindow(id) {
+  const win = document.getElementById(`win-${id}`);
+  if (win) {
+    win.style.transition = 'opacity 0.2s, transform 0.2s';
+    win.style.opacity = '0';
+    win.style.transform = (win.style.transform || '') + ' scale(0.8)';
+    setTimeout(() => {
+      win.remove();
+      windows = windows.filter(w => w.id !== id);
+      updateWindowList();
+      updateWinCount();
+    }, 200);
+  }
+}
+
+function toggleMaximize(id) {
+  const winObj = windows.find(w => w.id === id);
+  if (!winObj) return;
+  const win = winObj.el;
+
+  if (!winObj.maximized) {
+    winObj.origStyle = { left: win.style.left, top: win.style.top, width: win.style.width, height: win.style.height, transform: win.style.transform };
+    win.style.transition = 'all 0.25s cubic-bezier(0.4,0,0.2,1)';
+    win.style.left = '10px';
+    win.style.top = '10px';
+    win.style.width = (window.innerWidth - 20) + 'px';
+    win.style.height = (window.innerHeight - 20) + 'px';
+    win.style.transform = '';
+    winObj.maximized = true;
+  } else {
+    win.style.transition = 'all 0.25s cubic-bezier(0.4,0,0.2,1)';
+    if (winObj.origStyle) {
+      Object.assign(win.style, winObj.origStyle);
+    }
+    winObj.maximized = false;
+  }
+  setTimeout(() => { win.style.transition = ''; }, 300);
+}
+
+function focusWindow(win) {
+  document.querySelectorAll('.float-window').forEach(w => w.classList.remove('focused'));
+  win.classList.add('focused');
+  const allWins = document.querySelectorAll('.float-window');
+  allWins.forEach(w => { if (w !== win) w.style.zIndex = 5; });
+  win.style.zIndex = 6;
+}
+
+function closeAllWindows() {
+  [...windows].forEach(w => closeWindow(w.id));
+}
+
+// ARRANGE
+function arrangeWindows(mode) {
+  const active = windows.filter(w => document.getElementById(`win-${w.id}`));
+  if (active.length === 0) return;
+
+  if (mode === 'cascade') {
+    active.forEach((w, i) => {
+      const el = w.el;
+      el.style.transition = 'all 0.3s cubic-bezier(0.4,0,0.2,1)';
+      el.style.left = (60 + i * 40) + 'px';
+      el.style.top = (80 + i * 40) + 'px';
+      el.style.width = '380px';
+      el.style.height = '280px';
+      el.style.transform = '';
+      setTimeout(() => { el.style.transition = ''; }, 350);
+    });
+  } else if (mode === 'grid') {
+    const cols = Math.ceil(Math.sqrt(active.length));
+    const rows = Math.ceil(active.length / cols);
+    const W = (window.innerWidth - 80) / cols;
+    const H = (window.innerHeight - 120) / rows;
+    active.forEach((w, i) => {
+      const el = w.el;
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      el.style.transition = 'all 0.35s cubic-bezier(0.4,0,0.2,1)';
+      el.style.left = (20 + col * W) + 'px';
+      el.style.top = (70 + row * H) + 'px';
+      el.style.width = (W - 12) + 'px';
+      el.style.height = (H - 12) + 'px';
+      el.style.transform = '';
+      setTimeout(() => { el.style.transition = ''; }, 400);
+    });
+  } else if (mode === 'scatter') {
+    active.forEach((w) => {
+      const el = w.el;
+      el.style.transition = 'all 0.4s cubic-bezier(0.4,0,0.2,1)';
+      el.style.left = (60 + Math.random() * (window.innerWidth - 420)) + 'px';
+      el.style.top = (80 + Math.random() * (window.innerHeight - 360)) + 'px';
+      const rz = (Math.random() - 0.5) * 20;
+      el.dataset.rotZ = rz;
+      el.dataset.rotX = '0';
+      el.dataset.rotY = '0';
+      el.dataset.scale = '1';
+      el.style.transform = `perspective(800px) rotateZ(${rz}deg)`;
+      setTimeout(() => { el.style.transition = ''; }, 450);
+    });
+  }
+}
+
+// PANEL
+function togglePanel() {
+  panelOpen = !panelOpen;
+  document.getElementById('side-panel').classList.toggle('open', panelOpen);
+  document.getElementById('panel-toggle').textContent = panelOpen ? '▶' : '◀';
+}
+
+// GLOBAL CONTROLS
+function updateGlobalOpacity(val) {
+  globalOpacity = val / 100;
+  document.getElementById('opacity-val').textContent = val + '%';
+  document.querySelectorAll('.float-window').forEach(w => { w.style.opacity = globalOpacity; });
+}
+
+function updateGlobalScale(val) {
+  globalScale = val / 100;
+  document.getElementById('scale-val').textContent = val + '%';
+}
+
+function updateCamBlur(val) {
+  document.getElementById('blur-val').textContent = val + 'px';
+  document.getElementById('camera-feed').style.filter = `blur(${val}px)`;
+}
+
+function setNeonColor(color) {
+  document.documentElement.style.setProperty('--neon-cyan', color);
+  document.documentElement.style.setProperty('--glass-border', color.replace(')', ', 0.25)').replace('rgb', 'rgba').replace('#', 'rgba(') || color + '40');
+}
+
+// WINDOW LIST
+function updateWindowList() {
+  const list = document.getElementById('win-list');
+  list.innerHTML = '';
+  windows.filter(w => document.getElementById(`win-${w.id}`)).forEach(w => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="win-list-name">${w.name}</span><span class="win-list-del" onclick="closeWindow(${w.id})">✕</span>`;
+    li.onclick = (e) => {
+      if (e.target.classList.contains('win-list-del')) return;
+      focusWindow(w.el);
+      w.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+    list.appendChild(li);
+  });
+}
+
+function updateWinCount() {
+  const alive = windows.filter(w => document.getElementById(`win-${w.id}`)).length;
+  document.getElementById('win-count').textContent = alive;
+}
+
+// TOUCH PINCH TO ZOOM
+let lastDist = null;
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastDist = Math.sqrt(dx*dx + dy*dy);
+  }
+});
+
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const focused = document.querySelector('.float-window.focused');
+    if (focused && lastDist) {
+      const ratio = dist / lastDist;
+      const curScale = parseFloat(focused.dataset.scale || '1');
+      const newScale = Math.max(0.3, Math.min(3, curScale * ratio));
+      focused.dataset.scale = newScale;
+      const id = parseInt(focused.id.replace('win-',''));
+      applyTransform(focused, id, newScale);
+      const badge = document.getElementById(`scale-${id}`);
+      if (badge) badge.textContent = Math.round(newScale * 100) + '%';
+    }
+    lastDist = dist;
+    e.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', () => { lastDist = null; });
+
+/* ═══════════════════════════════════════════════════
+   OCULUS VR MODE
+═══════════════════════════════════════════════════ */
+let vrActive = false;
+let vrIPD = 63;        // interpupillary distance in mm (visual offset)
+let vrZoom = 0.85;     // scene scale inside each eye
+let vrYaw = 0;         // horizontal head rotation (degrees)
+let vrPitch = 0;       // vertical head rotation
+let gyroEnabled = false;
+let vrAnimFrame = null;
+
+// --- Modal helpers ---
+function openVRModal() {
+  document.getElementById('vr-modal').classList.add('open');
+}
+function closeVRModal() {
+  document.getElementById('vr-modal').classList.remove('open');
+}
+function updateIPD(val) {
+  vrIPD = parseInt(val);
+  document.getElementById('vr-ipd-val').textContent = val + 'mm';
+}
+function updateVRZoom(val) {
+  vrZoom = parseInt(val) / 100;
+  document.getElementById('vr-zoom-val').textContent = val + '%';
+}
+
+// --- Enter / Exit ---
+function enterVRMode() {
+  closeVRModal();
+  vrActive = true;
+  document.body.classList.add('vr-active');
+
+  // Android/webkit fullscreen
+  const el = document.documentElement;
+  const rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+  if (rfs) rfs.call(el).catch(() => {});
+
+  renderVRFrame();  // first frame immediate, then loop takes over
+  tryGyroscope();
+  startVRLoop();
+}
+
+function exitVRMode() {
+  vrActive = false;
+  document.body.classList.remove('vr-active');
+  cancelAnimationFrame(vrAnimFrame);
+  const efs = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
+  if (efs) efs.call(document).catch(() => {});
+  stopGyroscope();
+  // Clear VR scenes
+  document.getElementById('vr-scene-left').innerHTML = '';
+  document.getElementById('vr-scene-right').innerHTML = '';
+}
+
+// --- Render VR scene via canvas — draws camera + floating windows each frame ---
+let vrCanvasLeft = null, vrCanvasRight = null;
+let vrCtxL = null, vrCtxR = null;
+
+function initVRCanvases() {
+  ['vr-scene-left','vr-scene-right'].forEach(id => {
+    document.getElementById(id).innerHTML = '';
+  });
+
+  vrCanvasLeft  = createVRCanvas('vr-scene-left');
+  vrCanvasRight = createVRCanvas('vr-scene-right');
+  vrCtxL = vrCanvasLeft.getContext('2d');
+  vrCtxR = vrCanvasRight.getContext('2d');
+}
+
+function createVRCanvas(parentId) {
+  const parent = document.getElementById(parentId);
+  const cv = document.createElement('canvas');
+  cv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;';
+  parent.appendChild(cv);
+  return cv;
+}
+
+function resizeVRCanvases() {
+  const w = window.innerWidth / 2;
+  const h = window.innerHeight;
+  [vrCanvasLeft, vrCanvasRight].forEach(cv => {
+    if (cv) { cv.width = w; cv.height = h; }
+  });
+}
+
+function renderVRFrame() {
+  if (!vrCanvasLeft) return;
+  resizeVRCanvases();
+
+  const W = vrCanvasLeft.width;
+  const H = vrCanvasLeft.height;
+  const camFeed = document.getElementById('camera-feed');
+  const hasCam  = camFeed && camFeed.srcObject && camFeed.readyState >= 2;
+
+  [vrCtxL, vrCtxR].forEach((ctx, eyeIdx) => {
+    ctx.clearRect(0, 0, W, H);
+
+    // --- Background ---
+    if (hasCam) {
+      // Draw camera video frame
+      ctx.globalAlpha = 0.88;
+      ctx.drawImage(camFeed, 0, 0, W, H);
+      ctx.globalAlpha = 1;
+    } else {
+      // Dark gradient fallback
+      const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+      grad.addColorStop(0, '#001a2e');
+      grad.addColorStop(1, '#010a12');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // --- Scanline grid ---
+    ctx.strokeStyle = 'rgba(0,245,255,0.03)';
+    ctx.lineWidth = 1;
+    for (let y = 0; y < H; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    }
+
+    // --- IPD offset ---
+    const ipdPx = (vrIPD - 63) * 2;
+    const shift  = eyeIdx === 0 ? -ipdPx : ipdPx;
+
+    // --- Floating windows via html2canvas-lite: just draw their bounding boxes ---
+    // We use getComputedStyle + getBoundingClientRect to faithfully draw each window
+    windows.forEach(w => {
+      const el = document.getElementById(`win-${w.id}`);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+
+      // Scale coordinates to half-screen canvas
+      const scaleX = W / window.innerWidth;
+      const scaleY = H / window.innerHeight;
+
+      const x = rect.left * scaleX + shift * scaleX;
+      const y = rect.top  * scaleY;
+      const ww = rect.width  * scaleX * vrZoom;
+      const wh = rect.height * scaleY * vrZoom;
+
+      ctx.save();
+
+      // Window background
+      ctx.fillStyle   = 'rgba(0,14,25,0.88)';
+      ctx.strokeStyle = 'rgba(0,245,255,0.35)';
+      ctx.lineWidth   = 1;
+      ctx.shadowColor = 'rgba(0,245,255,0.2)';
+      ctx.shadowBlur  = 12;
+      roundRect(ctx, x, y, ww, wh, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Title bar
+      ctx.fillStyle = 'rgba(0,245,255,0.07)';
+      roundRectTop(ctx, x, y, ww, Math.min(34 * scaleY, wh), 10);
+      ctx.fill();
+
+      // Title text
+      ctx.fillStyle = 'rgba(0,245,255,0.9)';
+      ctx.font = `${Math.round(9 * scaleY)}px Orbitron, monospace`;
+      ctx.fillText(w.name, x + 10 * scaleX, y + 20 * scaleY, ww - 20 * scaleX);
+
+      // If window has an image/video child, try to draw it
+      const img = el.querySelector('img');
+      const vid = el.querySelector('video');
+      const contentY = y + 34 * scaleY;
+      const contentH = wh - 34 * scaleY;
+      if (contentH > 0) {
+        try {
+          if (img && img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, x, contentY, ww, contentH);
+          } else if (vid && vid.readyState >= 2) {
+            ctx.drawImage(vid, x, contentY, ww, contentH);
+          } else {
+            // Placeholder
+            ctx.fillStyle = 'rgba(0,245,255,0.04)';
+            ctx.fillRect(x, contentY, ww, contentH);
+          }
+        } catch(e) {}
+      }
+
+      ctx.restore();
+    });
+
+    // --- Lens vignette ---
+    const vig = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, Math.max(W,H)*0.75);
+    vig.addColorStop(0, 'transparent');
+    vig.addColorStop(1, eyeIdx === 0 ? 'rgba(0,0,60,0.6)' : 'rgba(60,0,0,0.6)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+
+    // --- HUD label ---
+    ctx.fillStyle = 'rgba(0,245,255,0.7)';
+    ctx.font = `${Math.round(9 * W/400)}px Orbitron, monospace`;
+    const label = eyeIdx === 0 ? '👁 L · AR SPACE VR' : 'AR SPACE VR · R 👁';
+    ctx.fillText(label, W/2 - ctx.measureText(label).width/2, 22);
+  });
+}
+
+// Helper: rounded rectangle path
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+  ctx.lineTo(x+r, y+h);
+  ctx.arcTo(x, y+h, x, y+h-r, r);
+  ctx.lineTo(x, y+r);
+  ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+function roundRectTop(ctx, x, y, w, h, r) {
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.arcTo(x+w, y, x+w, y+r, r);
+  ctx.lineTo(x+w, y+h);
+  ctx.lineTo(x, y+h);
+  ctx.lineTo(x, y+r);
+  ctx.arcTo(x, y, x+r, y, r);
+  ctx.closePath();
+}
+
+// --- VR animation loop ---
+function startVRLoop() {
+  initVRCanvases();
+  function loop() {
+    if (!vrActive) return;
+    renderVRFrame();
+    vrAnimFrame = requestAnimationFrame(loop);
+  }
+  vrAnimFrame = requestAnimationFrame(loop);
+}
+
+// --- Gyroscope ---
+let gyroHandler = null;
+
+function tryGyroscope() {
+  if (typeof DeviceOrientationEvent === 'undefined') return;
+
+  gyroHandler = (e) => {
+    if (e.gamma === null && e.beta === null) return; // no sensor data
+    const newYaw   = (e.gamma || 0) * 1.2;
+    const newPitch = (e.beta  || 0) * 0.6;
+
+    // AR world anchor: shift windows when camera moves
+    if (!vrActive) updateWorldOrientation(newYaw, newPitch);
+
+    // VR head tracking
+    vrYaw   = newYaw;
+    vrPitch = newPitch;
+  };
+
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // iOS 13+ requires explicit permission
+    DeviceOrientationEvent.requestPermission()
+      .then(state => {
+        if (state === 'granted') {
+          window.addEventListener('deviceorientation', gyroHandler);
+          gyroEnabled = true;
+          document.getElementById('vr-gyro-indicator').style.display = 'block';
+        }
+      })
+      .catch(() => {});
+  } else {
+    // Android Chrome — no permission needed, just attach
+    window.addEventListener('deviceorientation', gyroHandler);
+    gyroEnabled = true;
+    document.getElementById('vr-gyro-indicator').style.display = 'block';
+  }
+}
+
+function stopGyroscope() {
+  gyroEnabled = false;
+  document.getElementById('vr-gyro-indicator').style.display = 'none';
+  if (gyroHandler) {
+    window.removeEventListener('deviceorientation', gyroHandler);
+    gyroHandler = null;
+  }
+  vrYaw = 0;
+  vrPitch = 0;
+}
+
+// Start gyro immediately for AR anchor effect (not just VR)
+tryGyroscope();
+
+// Mouse-drag to look around in VR (desktop testing) - only fires when VR overlay is visible
+(function() {
+  let dragging = false, lastMX = 0, lastMY = 0;
+  const overlay = document.getElementById('vr-overlay');
+  overlay.addEventListener('mousedown', e => {
+    dragging = true; lastMX = e.clientX; lastMY = e.clientY;
+  });
+  overlay.addEventListener('mousemove', e => {
+    if (!dragging || !vrActive) return;
+    vrYaw   += (e.clientX - lastMX) * 0.25;
+    vrPitch += (e.clientY - lastMY) * 0.15;
+    vrPitch  = Math.max(-40, Math.min(40, vrPitch));
+    lastMX = e.clientX; lastMY = e.clientY;
+  });
+  overlay.addEventListener('mouseup', () => { dragging = false; });
+})();
+
+// Keyboard ESC exits VR
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && vrActive) exitVRMode();
+});
+
+// Android: lock to landscape in VR mode, portrait otherwise
+function setScreenOrientation(mode) {
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock(mode).catch(() => {});
+    }
+  } catch(e) {}
+}
+
+// Patch enterVRMode to lock landscape
+const _origEnterVR = enterVRMode;
+enterVRMode = function() {
+  setScreenOrientation('landscape');
+  _origEnterVR();
+};
+const _origExitVR = exitVRMode;
+exitVRMode = function() {
+  _origExitVR();
+  setScreenOrientation('portrait-primary');
+};
+
+// Android: show "Add to Home Screen" hint after 10s if on mobile and not standalone
+if (/Android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
+  setTimeout(() => {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'position:fixed;bottom:110px;left:50%;transform:translateX(-50%);z-index:50;background:rgba(0,8,18,0.95);border:1px solid rgba(0,245,255,0.3);border-radius:12px;padding:12px 20px;font-family:Rajdhani,sans-serif;font-size:12px;color:rgba(0,245,255,0.7);letter-spacing:1px;text-align:center;white-space:nowrap;box-shadow:0 0 20px rgba(0,245,255,0.1);';
+    hint.innerHTML = '💡 Menú del navegador → <b>Añadir a pantalla de inicio</b> para app completa &nbsp;<span onclick="this.parentNode.remove()" style="cursor:pointer;color:#ff6666;">✕</span>';
+    document.body.appendChild(hint);
+    setTimeout(() => hint.remove(), 8000);
+  }, 10000);
+}
+</script>
+</body>
+</html>
